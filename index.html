@@ -284,6 +284,54 @@
       to   { opacity: 1; transform: translateY(0); }
     }
 
+    /* ── Volume control ── */
+    #volume-wrap {
+      position: fixed;
+      bottom: 24px;
+      right: 80px;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(10,6,18,0.85);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(245,200,66,0.25);
+      border-radius: 30px;
+      padding: 0 16px;
+      height: 48px;
+      box-shadow: 0 0 20px var(--glow-gold);
+    }
+    #volume-icon { font-size: 1rem; color: var(--gold); }
+    #volume-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 90px;
+      height: 4px;
+      border-radius: 2px;
+      background: linear-gradient(to right, var(--gold) 75%, rgba(253,245,230,0.15) 75%);
+      outline: none;
+      cursor: pointer;
+    }
+    #volume-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--gold);
+      box-shadow: 0 0 6px var(--glow-gold);
+      cursor: pointer;
+      transition: transform 0.15s;
+    }
+    #volume-slider::-webkit-slider-thumb:hover { transform: scale(1.3); }
+    #volume-slider::-moz-range-thumb {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--gold);
+      border: none;
+      cursor: pointer;
+    }
+
     /* ── Music button ── */
     #music-btn {
       position: fixed;
@@ -366,6 +414,11 @@
 
   <p class="footer">Made with 💛 for Alec · April 30, 2026</p>
 </main>
+
+<div id="volume-wrap">
+  <span id="volume-icon">🔉</span>
+  <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.75" />
+</div>
 
 <button id="music-btn" class="visible" title="Toggle music">🔊</button>
 
@@ -450,6 +503,25 @@
     musicPlaying = true;
     musicScheduled = setTimeout(() => { killHappyBirthday(); playHappyBirthday(); }, totalMs + 600);
   }
+
+  /* ── Volume slider ── */
+  const volumeSlider = document.getElementById('volume-slider');
+  const volumeIcon   = document.getElementById('volume-icon');
+
+  function updateSliderTrack(val) {
+    const pct = val * 100;
+    volumeSlider.style.background =
+      `linear-gradient(to right, var(--gold) ${pct}%, rgba(253,245,230,0.15) ${pct}%)`;
+    volumeIcon.textContent = val === 0 ? '🔇' : val < 0.4 ? '🔈' : val < 0.75 ? '🔉' : '🔊';
+  }
+
+  volumeSlider.addEventListener('input', () => {
+    const val = parseFloat(volumeSlider.value);
+    bgAudio.volume = val;
+    updateSliderTrack(val);
+  });
+
+  updateSliderTrack(0.75);
 
   /* ── Auto-start music on first interaction (browser autoplay policy) ── */
   const musicBtn = document.getElementById('music-btn');
