@@ -284,6 +284,30 @@
       to   { opacity: 1; transform: translateY(0); }
     }
 
+    /* ── Music button ── */
+    #music-btn {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 100;
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      border: 1px solid rgba(245,200,66,0.35);
+      background: rgba(10,6,18,0.85);
+      backdrop-filter: blur(10px);
+      color: var(--gold);
+      font-size: 1.4rem;
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 20px var(--glow-gold);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    #music-btn:hover { transform: scale(1.12); box-shadow: 0 0 32px var(--glow-gold); }
+    #music-btn.visible { display: flex; }
+
     /* ── Responsive ── */
     @media (max-width: 480px) {
       .ring { width: 240px; height: 240px; }
@@ -343,7 +367,135 @@
   <p class="footer">Made with 💛 for Alec · April 30, 2026</p>
 </main>
 
+<button id="music-btn" title="Toggle music">🔊</button>
+
 <script>
+  /* ── Happy Birthday Music (Web Audio API) ── */
+  let audioCtx = null;
+  let musicPlaying = false;
+  let musicNodes = [];
+  let musicScheduled = false;
+
+  // Happy Birthday notes: [note_hz, duration_beats]
+  const C4=261.63, D4=293.66, E4=329.63, F4=349.23, G4=392.00,
+        A4=440.00, B4=493.88, C5=523.25, D5=587.33, E5=659.25,
+        F5=698.46, G5=783.99, A5=880.00, REST=0;
+
+  const happyBirthdaySong = [
+    [C4,0.75],[C4,0.25],[D4,1],[C4,1],[F4,1],[E4,2],
+    [C4,0.75],[C4,0.25],[D4,1],[C4,1],[G4,1],[F4,2],
+    [C4,0.75],[C4,0.25],[C5,1],[A4,1],[F4,1],[E4,1],[D4,2],
+    [A4,0.75],[A4,0.25],[A5,1],[F5,1],[C5,1],[B4,1],[A4,2],
+    [G5,0.75],[G5,0.25],[F5,1],[C5,1],[D5,2],[C5,4],
+  ];
+
+  function ensureAudioCtx() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  }
+
+  function playNote(freq, startTime, duration, gainNode) {
+    if (freq === REST) return;
+    const osc = audioCtx.createOscillator();
+    const env = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, startTime);
+
+    // Softer harmonic — add a subtle triangle osc an octave up
+    const osc2 = audioCtx.createOscillator();
+    osc2.type = 'triangle';
+    osc2.frequency.setValueAtTime(freq * 2, startTime);
+    const g2 = audioCtx.createGain();
+    g2.gain.setValueAtTime(0.08, startTime);
+    osc2.connect(g2);
+    g2.connect(gainNode);
+
+    env.gain.setValueAtTime(0, startTime);
+    env.gain.linearRampToValueAtTime(0.55, startTime + 0.04);
+    env.gain.setValueAtTime(0.55, startTime + duration - 0.06);
+    env.gain.linearRampToValueAtTime(0, startTime + duration);
+
+    osc.connect(env);
+    env.connect(gainNode);
+
+    osc.start(startTime);
+    osc.stop(startTime + duration);
+    osc2.start(startTime);
+    osc2.stop(startTime + duration);
+
+    musicNodes.push(osc, osc2);
+  }
+
+  function playHappyBirthday(loop = true) {
+    ensureAudioCtx();
+    const masterGain = audioCtx.createGain();
+    masterGain.gain.setValueAtTime(0.45, audioCtx.currentTime);
+
+    // Reverb-lite: convolver would be ideal but simple delay works
+    const delay = audioCtx.createDelay(0.3);
+    delay.delayTime.value = 0.18;
+    const delayGain = audioCtx.createGain();
+    delayGain.gain.value = 0.18;
+    masterGain.connect(delay);
+    delay.connect(delayGain);
+    delayGain.connect(audioCtx.destination);
+    masterGain.connect(audioCtx.destination);
+
+    const bpm = 108;
+    const beat = 60 / bpm;
+    let t = audioCtx.currentTime + 0.1;
+    let totalDuration = 0;
+
+    for (const [freq, beats] of happyBirthdaySong) {
+      const dur = beats * beat;
+      playNote(freq, t, dur * 0.92, masterGain);
+      t += dur;
+      totalDuration += dur * 1000;
+    }
+
+    musicNodes.push(masterGain, delay, delayGain);
+    musicPlaying = true;
+
+    if (loop) {
+      musicScheduled = setTimeout(() => {
+        stopMusic();
+        playHappyBirthday(true);
+      }, totalDuration + 800);
+    }
+  }
+
+  function stopMusic() {
+    clearTimeout(musicScheduled);
+    for (const n of musicNodes) {
+      try { n.disconnect(); } catch(e) {}
+      try { n.stop && n.stop(); } catch(e) {}
+    }
+    musicNodes = [];
+    musicPlaying = false;
+  }
+
+  const musicBtn = document.getElementById('music-btn');
+  musicBtn.addEventListener('click', () => {
+    if (musicPlaying) {
+      stopMusic();
+      musicBtn.textContent = '🔇';
+    } else {
+      playHappyBirthday(true);
+      musicBtn.textContent = '🔊';
+    }
+  });
+
+  // Prime AudioContext on first interaction so autoplay works when birthday hits
+  function primeAudio() {
+    ensureAudioCtx();
+    document.removeEventListener('click', primeAudio);
+    document.removeEventListener('keydown', primeAudio);
+    document.removeEventListener('touchstart', primeAudio);
+  }
+  document.addEventListener('click', primeAudio);
+  document.addEventListener('keydown', primeAudio);
+  document.addEventListener('touchstart', primeAudio);
+
   /* ── Stars ── */
   const canvas = document.getElementById('stars-canvas');
   const ctx = canvas.getContext('2d');
@@ -443,7 +595,14 @@
     if (diff <= 0) {
       cdWrap.style.display = 'none';
       bdayMsg.classList.add('show');
-      if (!confettiFired) { launchConfetti(); confettiFired = true; }
+      if (!confettiFired) {
+        launchConfetti();
+        confettiFired = true;
+        // Auto-play music & show button
+        musicBtn.classList.add('visible');
+        playHappyBirthday(true);
+        musicBtn.textContent = '🔊';
+      }
       return;
     }
 
