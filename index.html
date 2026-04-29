@@ -284,44 +284,6 @@
       to   { opacity: 1; transform: translateY(0); }
     }
 
-    /* ── Tap to start overlay ── */
-    #tap-overlay {
-      position: fixed;
-      inset: 0;
-      z-index: 200;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      background: rgba(10,6,18,0.92);
-      backdrop-filter: blur(12px);
-      cursor: pointer;
-      gap: 18px;
-      transition: opacity 0.6s;
-    }
-    #tap-overlay.hidden { opacity: 0; pointer-events: none; }
-    .tap-icon {
-      font-size: 3.5rem;
-      animation: pulse-tap 1.6s ease-in-out infinite;
-    }
-    @keyframes pulse-tap {
-      0%,100% { transform: scale(1);    opacity: 1; }
-      50%      { transform: scale(1.18); opacity: 0.7; }
-    }
-    .tap-text {
-      font-family: 'DM Sans', sans-serif;
-      font-size: 1rem;
-      font-weight: 300;
-      letter-spacing: 0.3em;
-      text-transform: uppercase;
-      color: var(--lavender);
-    }
-    .tap-sub {
-      font-size: 0.72rem;
-      color: rgba(253,245,230,0.35);
-      letter-spacing: 0.15em;
-    }
-
     /* ── Music button ── */
     #music-btn {
       position: fixed;
@@ -356,12 +318,6 @@
   </style>
 </head>
 <body>
-
-<div id="tap-overlay">
-  <div class="tap-icon">🎵</div>
-  <p class="tap-text">Tap anywhere to begin</p>
-  <p class="tap-sub">Music will play during the countdown</p>
-</div>
 
 <canvas id="stars-canvas"></canvas>
 
@@ -416,62 +372,40 @@
 <script>
   /* ══════════════════════════════════════════
      MUSIC ENGINE
-     — Ambient loop during countdown
+     — golden.mp3 loops during countdown
      — Happy Birthday melody when it hits 0
   ══════════════════════════════════════════ */
-  let audioCtx = null;
+
+  // ── Background audio element (golden.mp3) ──
+  const bgAudio = new Audio('golden.mp3');
+  bgAudio.loop = true;
+  bgAudio.volume = 0.75;
   let musicPlaying = false;
+
+  // ── Happy Birthday (Web Audio API) ──
+  let audioCtx = null;
   let musicNodes = [];
   let musicScheduled = null;
-  let countdownMusicRunning = false;
 
-  const C3=130.81,D3=146.83,E3=164.81,F3=174.61,G3=196.00,A3=220.00,B3=246.94;
   const C4=261.63,D4=293.66,E4=329.63,F4=349.23,G4=392.00,A4=440.00,B4=493.88;
   const C5=523.25,D5=587.33,E5=659.25,F5=698.46,G5=783.99,A5=880.00;
-  const REST=0;
 
   function ensureAudioCtx() {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (audioCtx.state === 'suspended') audioCtx.resume();
   }
 
-  function killNodes() {
+  function killHappyBirthday() {
     clearTimeout(musicScheduled);
     for (const n of musicNodes) {
       try { n.stop && n.stop(0); } catch(e) {}
       try { n.disconnect(); } catch(e) {}
     }
     musicNodes = [];
-    musicPlaying = false;
-    countdownMusicRunning = false;
   }
 
-  /* ── Soft ambient countdown music: gentle waltz-feel loop ── */
-  // Melody line (right hand)
-  const ambientMelody = [
-    [E4,1.5],[D4,0.5],[C4,1],[E4,1],
-    [G4,1.5],[A4,0.5],[G4,1],[E4,1],
-    [F4,1.5],[E4,0.5],[D4,1],[F4,1],
-    [A4,1.5],[G4,0.5],[F4,1],[D4,1],
-    [E4,1.5],[F4,0.5],[G4,1],[A4,1],
-    [C5,1.5],[B4,0.5],[A4,1],[G4,1],
-    [F4,1],[E4,1],[D4,1],[C4,1],
-    [C4,3],[REST,1],
-  ];
-  // Bass / chord pulses (left hand) — root note every beat
-  const ambientBass = [
-    [C3,1],[C3,1],[C3,1],[C3,1],
-    [G3,1],[G3,1],[G3,1],[G3,1],
-    [F3,1],[F3,1],[F3,1],[F3,1],
-    [D3,1],[D3,1],[D3,1],[D3,1],
-    [A3,1],[A3,1],[A3,1],[A3,1],
-    [G3,1],[G3,1],[G3,1],[G3,1],
-    [F3,1],[F3,1],[G3,1],[G3,1],
-    [C3,2],[G3,1],[C3,1],
-  ];
-
   function scheduleNote(freq, startTime, duration, gainNode, type='sine', vol=0.4) {
-    if (freq === REST) return;
+    if (!freq) return;
     const osc = audioCtx.createOscillator();
     const env = audioCtx.createGain();
     osc.type = type;
@@ -485,85 +419,6 @@
     musicNodes.push(osc, env);
   }
 
-  function playCountdownMusic() {
-    ensureAudioCtx();
-    countdownMusicRunning = true;
-    musicPlaying = true;
-
-    const master = audioCtx.createGain();
-    master.gain.setValueAtTime(0.38, audioCtx.currentTime);
-
-    // Soft reverb via delay
-    const delay = audioCtx.createDelay(0.5);
-    delay.delayTime.value = 0.22;
-    const dGain = audioCtx.createGain(); dGain.gain.value = 0.14;
-    master.connect(delay); delay.connect(dGain); dGain.connect(audioCtx.destination);
-    master.connect(audioCtx.destination);
-    musicNodes.push(master, delay, dGain);
-
-    const bpm = 96;
-    const beat = 60 / bpm;
-    let t = audioCtx.currentTime + 0.1;
-    let totalMs = 0;
-
-    for (const [freq, beats] of ambientMelody) {
-      const dur = beats * beat;
-      scheduleNote(freq, t, dur, master, 'sine', 0.42);
-      // harmonic overtone
-      if (freq !== REST) scheduleNote(freq * 2, t, dur, master, 'triangle', 0.07);
-      t += dur; totalMs += dur * 1000;
-    }
-
-    // Bass
-    let tb = audioCtx.currentTime + 0.1;
-    for (const [freq, beats] of ambientBass) {
-      const dur = beats * beat;
-      scheduleNote(freq, tb, dur * 0.55, master, 'triangle', 0.18);
-      tb += dur;
-    }
-
-    // Loop seamlessly
-    musicScheduled = setTimeout(() => {
-      if (countdownMusicRunning) {
-        // don't kill all nodes – just reschedule
-        playCountdownMusicLoop();
-      }
-    }, totalMs - 200);
-  }
-
-  function playCountdownMusicLoop() {
-    // Clear old oscillators but keep master graph
-    ensureAudioCtx();
-    const master = audioCtx.createGain();
-    master.gain.setValueAtTime(0.38, audioCtx.currentTime);
-    const delay = audioCtx.createDelay(0.5);
-    delay.delayTime.value = 0.22;
-    const dGain = audioCtx.createGain(); dGain.gain.value = 0.14;
-    master.connect(delay); delay.connect(dGain); dGain.connect(audioCtx.destination);
-    master.connect(audioCtx.destination);
-    musicNodes.push(master, delay, dGain);
-
-    const bpm = 96, beat = 60 / bpm;
-    let t = audioCtx.currentTime + 0.05;
-    let totalMs = 0;
-    for (const [freq, beats] of ambientMelody) {
-      const dur = beats * beat;
-      scheduleNote(freq, t, dur, master, 'sine', 0.42);
-      if (freq !== REST) scheduleNote(freq * 2, t, dur, master, 'triangle', 0.07);
-      t += dur; totalMs += dur * 1000;
-    }
-    let tb = audioCtx.currentTime + 0.05;
-    for (const [freq, beats] of ambientBass) {
-      const dur = beats * beat;
-      scheduleNote(freq, tb, dur * 0.55, master, 'triangle', 0.18);
-      tb += dur;
-    }
-    musicScheduled = setTimeout(() => {
-      if (countdownMusicRunning) playCountdownMusicLoop();
-    }, totalMs - 200);
-  }
-
-  /* ── Happy Birthday melody (plays at countdown = 0) ── */
   const happyBirthdaySong = [
     [C4,0.75],[C4,0.25],[D4,1],[C4,1],[F4,1],[E4,2],
     [C4,0.75],[C4,0.25],[D4,1],[C4,1],[G4,1],[F4,2],
@@ -589,49 +444,55 @@
     for (const [freq, beats] of happyBirthdaySong) {
       const dur = beats * beat;
       scheduleNote(freq, t, dur * 0.9, master, 'sine', 0.55);
-      if (freq !== REST) scheduleNote(freq * 2, t, dur * 0.9, master, 'triangle', 0.08);
+      if (freq) scheduleNote(freq * 2, t, dur * 0.9, master, 'triangle', 0.08);
       t += dur; totalMs += dur * 1000;
     }
     musicPlaying = true;
-    musicScheduled = setTimeout(() => { killNodes(); playHappyBirthday(); }, totalMs + 600);
+    musicScheduled = setTimeout(() => { killHappyBirthday(); playHappyBirthday(); }, totalMs + 600);
   }
 
-  /* ── Controls ── */
+  /* ── Auto-start music on first interaction (browser autoplay policy) ── */
   const musicBtn = document.getElementById('music-btn');
-  const tapOverlay = document.getElementById('tap-overlay');
+  let musicStarted = false;
 
-  function startCountdownMusic() {
-    tapOverlay.classList.add('hidden');
-    playCountdownMusic();
+  function startMusic() {
+    if (musicStarted) return;
+    musicStarted = true;
+    bgAudio.play().catch(() => {});
+    musicPlaying = true;
     musicBtn.textContent = '🔊';
+    document.removeEventListener('click', startMusic);
+    document.removeEventListener('keydown', startMusic);
+    document.removeEventListener('touchstart', startMusic);
   }
 
-  tapOverlay.addEventListener('click', startCountdownMusic);
-  tapOverlay.addEventListener('touchstart', e => { e.preventDefault(); startCountdownMusic(); });
+  document.addEventListener('click', startMusic);
+  document.addEventListener('keydown', startMusic);
+  document.addEventListener('touchstart', startMusic);
+
+  // Also try immediate autoplay (works in some browsers)
+  bgAudio.play().then(() => {
+    musicStarted = true;
+    musicPlaying = true;
+    musicBtn.textContent = '🔊';
+  }).catch(() => {
+    // Browser blocked it — will start on first interaction above
+  });
 
   musicBtn.addEventListener('click', () => {
     if (musicPlaying) {
-      killNodes();
+      bgAudio.pause();
+      killHappyBirthday();
+      musicPlaying = false;
       musicBtn.textContent = '🔇';
     } else {
-      // Resume whichever mode we're in
       const diff = new Date('2026-04-30T00:00:00') - new Date();
-      if (diff > 0) { playCountdownMusic(); }
+      if (diff > 0) { bgAudio.play().catch(() => {}); }
       else { playHappyBirthday(); }
+      musicPlaying = true;
       musicBtn.textContent = '🔊';
     }
   });
-
-  // Prime AudioContext on first interaction so autoplay works when birthday hits
-  function primeAudio() {
-    ensureAudioCtx();
-    document.removeEventListener('click', primeAudio);
-    document.removeEventListener('keydown', primeAudio);
-    document.removeEventListener('touchstart', primeAudio);
-  }
-  document.addEventListener('click', primeAudio);
-  document.addEventListener('keydown', primeAudio);
-  document.addEventListener('touchstart', primeAudio);
 
   /* ── Stars ── */
   const canvas = document.getElementById('stars-canvas');
@@ -735,8 +596,9 @@
       if (!confettiFired) {
         launchConfetti();
         confettiFired = true;
-        // Switch from ambient to Happy Birthday music
-        killNodes();
+        // Fade out golden.mp3, then play Happy Birthday
+        bgAudio.pause();
+        bgAudio.currentTime = 0;
         playHappyBirthday();
         musicBtn.textContent = '🔊';
       }
